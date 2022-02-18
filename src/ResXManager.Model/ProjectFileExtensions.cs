@@ -4,6 +4,7 @@
     using System.Globalization;
     using System.IO;
     using System.Linq;
+    using System.Text.RegularExpressions;
 
     using ResXManager.Infrastructure;
     using TomsToolbox.Essentials;
@@ -11,6 +12,7 @@
     public static class ProjectFileExtensions
     {
         private const string Resx = ".resx";
+        private const string ResxRegex = @"([a-zA-Z_]*)_(..-..)\.resx";
         private const string Resw = ".resw";
         private static readonly string[] _supportedFileExtensions = { Resx, Resw };
 
@@ -62,6 +64,12 @@
                 var fileNameWithoutExtension = Path.GetFileNameWithoutExtension(filePath);
                 var cultureName = Path.GetExtension(fileNameWithoutExtension).TrimStart('.');
 
+                // retry with RegEx
+                if (cultureName.IsNullOrEmpty())
+                {
+                    (_, cultureName) = GetBaseNameAndLanguageByRegex(filePath);
+                }
+
                 if (cultureName.IsNullOrEmpty())
                     return CultureKey.Neutral;
 
@@ -98,7 +106,13 @@
             var innerExtension = Path.GetExtension(name);
             var languageName = innerExtension.TrimStart('.');
 
-            return ResourceManager.IsValidLanguageName(languageName) ? Path.GetFileNameWithoutExtension(name) : name;
+            if (!languageName.IsNullOrEmpty())
+                return ResourceManager.IsValidLanguageName(languageName) ? Path.GetFileNameWithoutExtension(name) : name;
+            else
+            {
+                var (baseName, languageName2) = GetBaseNameAndLanguageByRegex(filePath);
+                return ResourceManager.IsValidLanguageName(languageName2) ? baseName : name;
+            }
         }
 
         public static string GetLanguageFileName(this ProjectFile projectFile, CultureInfo culture)
@@ -133,6 +147,21 @@
         public static bool IsCSharpFile(this ProjectFile projectFile)
         {
             return Path.GetExtension(projectFile.FilePath).Equals(".cs", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static Tuple<string, string> GetBaseNameAndLanguageByRegex(string filePath)
+        {
+            Match match = Regex.Match(filePath, ResxRegex, RegexOptions.IgnoreCase);
+            var baseName = string.Empty;
+            var languageName = string.Empty;
+
+            if (match.Success && match.Groups.Count > 0)
+            {
+                baseName = match.Groups[1].Value;
+                languageName = match.Groups[2].Value;
+            }
+
+            return Tuple.Create(baseName, languageName);
         }
     }
 }
